@@ -306,7 +306,7 @@ class CanWorker():
         """
         Парсит данные из PDO.
 
-        @param data: Данные для парсинга.
+        @param data: Данные из PDO (cobid и payload).
         @return: Кортеж из номера узла, COBID и параметров.
         """
         if data[0] != 0:
