@@ -377,7 +377,7 @@ SDO_w_count=0
 SDO_r_error=0
 SDO_r_count=0
 
-max_count_sdo=50001
+max_count_sdo=501
 
 node = 12 # Номер узла к которому обрщаемся
 index = 0x6411 # Индекс SDO объекта (значение канала)
