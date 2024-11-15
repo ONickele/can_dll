@@ -369,8 +369,8 @@ dll=load_dll("can_dll.dll") #Загрузка DLL
 
 pdo_buffer = (c_ubyte * 11)() # Буфер куда будет скидываться 
 a = CanWorker(dll,pps,pdo_buffer,"192.168.7.2")
-res=a.connect("192.168.7.2", 2000)
-print(f'Connect to PLC {res}')
+con=a.connect("192.168.7.2", 2000)
+print(f'Connect to PLC {con}')
 SDO_w_error=0
 SDO_w_count=0
 
@@ -378,29 +378,36 @@ SDO_r_error=0
 SDO_r_count=0
 
 max_count_sdo=50001
-if res > 0:
+
+node = 12 # Номер узла к которому обрщаемся
+index = 0x6411 # Индекс SDO объекта (значение канала)
+subindex = 0x00 # Под индекс SDO объекта (номер канала)
+
+
+if con > 0:
     value=15555
+
+    # блок записи/чтения SDO параметров
     for i1 in range(1,max_count_sdo):
         for channel in range(1,9):
-            result_SDO=a.WriteSDO(12,0x6411,channel,i1,'uint16',200)
+            result_SDO=a.WriteSDO(node_id=node, index=index, sub_index=channel, data=i1, data_type='uint16', timeout_ms=200)
             SDO_w_count+=1
             if result_SDO<0:
                 SDO_w_error+=1
             print(f"Result SDO Write {channel} {result_SDO}")
 
-            result_SDO=a.ReadSDO(12,0x6411,channel,200)
+            result_SDO=a.ReadSDO(node_id=node, index=index, sub_index=channel, timeout_ms=200)
             SDO_r_count+=1
             if result_SDO<0:
                 SDO_r_error+=1
             print(f"Result SDO Read {channel} {result_SDO}")
 
-
-    l_pdo_buffer = (c_ubyte * 11)()
+    # смотрим сколько ошибок накопилось 
     print(f"SDO_w_error {SDO_w_error}/{SDO_w_count} SDO_r_error {SDO_r_error}/{SDO_r_count}")
+
+    # блок чтения PDO
     t1= datetime.datetime.now()
-    value = 0
-    while True:
-        
+    while True:        
         t2= datetime.datetime.now()
         if (t2 - t1).total_seconds()  < 20.0:
             #print(pdo_buffer[:])
@@ -412,8 +419,6 @@ if res > 0:
             
         else:
             break
-        l_pdo_buffer[:] = pdo_buffer[:]
-        value+=10
         time.sleep(0.2)
 
     a.Disconnect()
