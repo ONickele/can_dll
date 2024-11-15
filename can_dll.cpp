@@ -206,7 +206,7 @@ extern "C" {
 
         /**
             * Общий буфер чтения. Буфер, в который записываются получаемые данные. 
-            * Используется всеми функциями, ожидающими пакет.
+            * Используется для дальнейшего распределения пакетов SDO чтения и записи.
         */
         unsigned char readBuffer[16];
 
@@ -246,16 +246,15 @@ extern "C" {
             * @brief Метод прослушивания сокета и распределения пакетов SDO/PDO.
         */
         void PacketListener() {
+            uint16_t can_id;
+            fd_set readSet;
+            FD_ZERO(&readSet); // настраеваем фд для работы select
+            FD_SET(udpSocket, &readSet);
+
+            timeval timeout;
+            timeout.tv_sec = 0;
+            timeout.tv_usec = 500000;  // 500 ms
             while (isConnected) {
-                uint16_t can_id;
-                fd_set readSet;
-                FD_ZERO(&readSet); // настраеваем фд для работы select
-                FD_SET(udpSocket, &readSet);
-
-                timeval timeout;
-                timeout.tv_sec = 0;
-                timeout.tv_usec = 500000;  // 500 ms
-
                 // проверяем доступность данных
                 int result = select(0, &readSet, nullptr, nullptr, &timeout);
 
