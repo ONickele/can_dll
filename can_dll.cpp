@@ -283,6 +283,9 @@ extern "C" {
                 if (result > 0 && FD_ISSET(udpSocket, &readSet)) {
                     int serverAddrSize = sizeof(serverAddr);
                     int recvResult=recvfrom(udpSocket, (char*)readBuffer, sizeof(readBuffer), 0, (sockaddr*)&serverAddr, &serverAddrSize);
+                    if (recvResult == SOCKET_ERROR) {
+                        Disconnect(); 
+                    }
                     if (recvResult >= 16){ // получили данные
                         can_id = (static_cast<uint16_t>(readBuffer[1]) << 8) | readBuffer[0]; //считаем cobid из двух байт принятого пакета
                         if ((can_id >= 0x180 && can_id <= 0x57F) && (can_id & 0x80) ) {// Проверяем что это PDO

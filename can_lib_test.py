@@ -372,26 +372,31 @@ a = CanWorker(dll,pps,pdo_buffer,"192.168.7.2")
 res=a.connect("192.168.7.2", 2000)
 print(f'Connect to PLC {res}')
 SDO_w_error=0
-SDO_r_error=0
+SDO_w_count=0
 
-max_count_sdo=5001
+SDO_r_error=0
+SDO_r_count=0
+
+max_count_sdo=50001
 if res > 0:
     value=15555
     for i1 in range(1,max_count_sdo):
-        for i in range(1,9):
-            result_SDO=a.WriteSDO(12,0x6411,i,i1,'uint16',200)
+        for channel in range(1,9):
+            result_SDO=a.WriteSDO(12,0x6411,channel,i1,'uint16',200)
+            SDO_w_count+=1
             if result_SDO<0:
                 SDO_w_error+=1
-            print(f"Result SDO Write {result_SDO}")
+            print(f"Result SDO Write {channel} {result_SDO}")
 
-            result_SDO=a.ReadSDO(12,0x6411,i,200)
+            result_SDO=a.ReadSDO(12,0x6411,channel,200)
+            SDO_r_count+=1
             if result_SDO<0:
                 SDO_r_error+=1
-            print(f"Result SDO Read {result_SDO}")
+            print(f"Result SDO Read {channel} {result_SDO}")
 
 
     l_pdo_buffer = (c_ubyte * 11)()
-    print(f"SDO_w_error {SDO_w_error}/{max_count_sdo-1} SDO_r_error {SDO_r_error}/{max_count_sdo-1}")
+    print(f"SDO_w_error {SDO_w_error}/{SDO_w_count} SDO_r_error {SDO_r_error}/{SDO_r_count}")
     t1= datetime.datetime.now()
     value = 0
     while True:
