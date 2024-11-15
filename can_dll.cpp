@@ -184,62 +184,46 @@ extern "C" {
     private:
         /**
             * Экземпляр сокета для приема/отправки данных.
-            * @var udpSocket
-            * @type SOCKET
         */
         SOCKET udpSocket;
         /**
             * Структура адреса сервера для UDP-соединения. 
             * Содержит адрес и порт для подключения к серверу.
-            * @var serverAddr
-            * @type serverAddr
         */
         sockaddr_in serverAddr;
 
         /**
             * Флаг активности подключения. 
             * Если значение true, соединение установлено и активно.
-            * @var isConnected
-            * @type bool
         */
         bool isConnected;
 
         /**
             * Поток для чтения данных. 
             * Поток используется для асинхронного получения данных через сокет.
-            * @var readThread
-            * @type std::thread
         */
         std::thread readThread;
 
         /**
             * Общий буфер чтения. Буфер, в который записываются получаемые данные. 
             * Используется всеми функциями, ожидающими пакет.
-            * @var readBuffer
-            * @type unsigned char[16]
         */
         unsigned char readBuffer[16];
 
         /**
             * Буфер для хранения принятых PDO пакетов.
-            * @var pdobuffer
-            * @type unsigned char[10]
         */
         unsigned char* pdobuffer;
 
         /**
         * Буфер для записи SDO пакетов ответа на запись. 
         * Этот буфер используется для хранения ответа запроса на запись.
-        * @var readBuffer_sdo_w
-        * @type unsigned char[16]
         */
         unsigned char readBuffer_sdo_w[16];
 
         /**
             * Буфер для записи SDO пакетов ответа на чтение. 
             * Этот буфер используется для хранения ответа запроса на чтение.
-            * @var readBuffer_sdo_r
-            * @type unsigned char[16]
         */
         unsigned char readBuffer_sdo_r[16];
 
@@ -247,19 +231,15 @@ extern "C" {
             * ID пакета отправки.
             * Используется для отправки данных с указанным идентификатором.
             * Значение по умолчанию: 0x600.
-            * @var SEND_COBID
-            * @type int
         */
-        int SEND_COBID = 0x600;
+        const int SEND_COBID = 0x600;
 
         /**
             * ID пакета получения.
             * Используется для приема данных с указанным идентификатором.
             * Значение по умолчанию: 0x580.
-            * @var RECEIVE_COBID
-            * @type int
         */
-        int RECEIVE_COBID = 0x580;
+        const int RECEIVE_COBID = 0x580;
 
 
         /**
@@ -333,12 +313,12 @@ extern "C" {
 
         /**
             * @brief Метод создания заголовка SDO пакета.
-            * @param package - Массив в котором формируется пакет.
-            * @param write - Флаг чтения или записи.
-            * @param receiverId - Id получателя.
-            * @param index - Индекс SDO объекта.
-            * @param subIndex - Под индекс SDO объекта.
-            * @param dataSize - Количество байт данных (используется только для вариантта записи).
+            * @param package Массив в котором формируется пакет.
+            * @param write Флаг чтения или записи.
+            * @param receiverId Id получателя.
+            * @param index Индекс SDO объекта.
+            * @param subIndex Под индекс SDO объекта.
+            * @param dataSize Количество байт данных (используется только для вариантта записи).
             * @return 1 - успешно -1 - не подключены.
         */
         int makeSDOhead(unsigned char* package, bool write, int receiverId, int index, int subIndex, int dataSize) {
@@ -361,10 +341,10 @@ extern "C" {
 
         /**
             * @brief Метод верификации ответа на наш запрос SDO.
-            * @param package - Массив в котором находится пакет.
-            * @param receiverId - Id получателя которому отправляли запрос.
-            * @param index - Индекс SDO объекта.
-            * @param subIndex - Под индекс SDO объекта.
+            * @param package Массив в котором находится пакет.
+            * @param receiverId Id получателя которому отправляли запрос.
+            * @param index Индекс SDO объекта.
+            * @param subIndex Под индекс SDO объекта.
             * @return 1 - наш пакет -1 - НЕ наш пакет.
         */
         int verifySDO(unsigned char* package, int receiverId, int index, int subIndex) {
