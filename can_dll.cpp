@@ -281,14 +281,14 @@ extern "C" {
         }
 
         /**
-            * @brief Метод записи данных пакета во внешний буфер pdobuffer (передается cobid, длинна значимых байт и сам payload)
+            * @brief Метод записи данных пакета во внешний буфер pdobuffer (передается cobid, длина значимых байт и сам payload)
             * @return 1 - успешно -1 - не подключены.
         */
         int GetPDO() {
             if (!isConnected) return -1;
             pdobuffer[0] = readBuffer[0]; // первая часть cobid
             pdobuffer[1] = readBuffer[1]; // вторая часть cobid
-            pdobuffer[2] = readBuffer[4]; // длинна значимых байт
+            pdobuffer[2] = readBuffer[4]; // длина значимых байт
             std::copy(readBuffer + 8,readBuffer + 16, pdobuffer+3); // записываем дату PDO
             return 1;
         }
@@ -327,7 +327,7 @@ extern "C" {
             package[1] = static_cast<uint8_t>((SEND_COBID) >> 8);
             package[4] = 8; // длинна пакета
             if (write) {
-                package[8] = 0x23 | ((4 - dataSize) << 2); // количество действительных байт исходя из длинны 
+                package[8] = 0x23 | ((4 - dataSize) << 2); // количество действительных байт исходя из длины 
             } else {
                 package[8] = 0x40; // команда чтения
             }
