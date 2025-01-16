@@ -6,8 +6,17 @@
 #include <cstring>
 #include <cstdint>
 #include <thread>
+#include <functional>
 
 #pragma comment(lib, "ws2_32.lib")
+
+
+#define IS_ANSWER true
+#define IS_REQUEST false
+
+// Определение типа callback-функции
+typedef void (*CallbackFunc)(unsigned char*);
+
 
 extern "C" {
     class Worker {
@@ -16,15 +25,14 @@ extern "C" {
             * @brief Конструктор класса.
             * @param pdobuffer Буфер куда передаются PDO пакеты.
         */
-        __declspec(dllexport) Worker(unsigned char* pdobuffer): udpSocket(INVALID_SOCKET), isConnected(false), pdobuffer(pdobuffer) {
-            memset(readBuffer, 0, sizeof(readBuffer));  
+        Worker():callback_pdo(nullptr),callback_error(nullptr), udpSocket(INVALID_SOCKET), isConnected(false) { 
         } // конструктор
 
 
         /**
             * @brief Деконструктор класса.
         */
-        __declspec(dllexport) ~Worker() { // деконструктор 
+        ~Worker() { // деконструктор 
             if (isConnected) {
                 closesocket(udpSocket);
                 WSACleanup();
@@ -33,10 +41,28 @@ extern "C" {
         }
 
         /**
+            * @brief Метод регистрации callback'а получения PDO пакета
+            * @param cb функция которую будем привязывать
+        */
+        int RegisterCallback_pdo(CallbackFunc cb) {
+            callback_pdo = cb;
+            return 1;
+        }
+
+        /**
+            * @brief Метод регистрации callback'а получения пакета ошибки
+            * @param cb функция которую будем привязывать
+        */
+        int RegisterCallback_error(CallbackFunc cb) {
+            callback_error = cb;
+            return 1;
+        }
+
+        /**
             * @brief Метод создания сокета.
             * @return 1 - сокет успешно создан, -1 - ошибка инициализации winsock, -2 - ошибка создания сокета.
         */
-        __declspec(dllexport) int CreateSocket() { // создаем сокет 
+        int CreateSocket() { // создаем сокет 
             WSADATA wsaData;
             if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) { //инициируем использование winsock DLL процессом
                 return -1;
@@ -56,7 +82,7 @@ extern "C" {
             * @param port порт сервера.
             * @return 1 - успешно -1 - сокет уже создан -2 - возникла ошибка при отправке стартового пакета -3 - возникла ошибка при получении ответа.
         */
-        __declspec(dllexport) int ConnectToUDPServer(const char* ipAddress, int port) {
+        int ConnectToUDPServer(const char* ipAddress, int port) {
             if (udpSocket == INVALID_SOCKET) return -1; // проверяем не создан ли сокет 
 
             // настраиваем сокет 
@@ -91,6 +117,8 @@ extern "C" {
             // создаем поток прослушивания сокета если не возникло ошибок с установлением связи 
             isConnected = true;
             readThread = std::thread(&Worker::PacketListener, this);
+            //heartbeatThread = std::thread(&Worker::Sending_heartbeat, this);
+            
             return 1;
         }
 
@@ -104,7 +132,7 @@ extern "C" {
             * @param timeout_ms Таймаут ожидания ответа в миллисекундах.
             * @return 1 - успешно -1 - не подключены -2 - ошибка записи -4 нет ответа.
         */
-        __declspec(dllexport) int WriteSDO(int receiverId, int index, int subIndex, const unsigned char* data, int dataSize, int timeout_ms = 1000) {
+        int WriteSDO(int receiverId, int index, int subIndex, const unsigned char* data, int dataSize, int timeout_ms = 1000) {
             if (!isConnected) return -1;// мы все еще подключены
 
             // формируем SDO пакет для записи 
@@ -138,7 +166,7 @@ extern "C" {
             * @param timeout_ms Таймаут ожидания ответа в миллисекундах.
             * @return 1 - успешно -1 - не подключены -2 - ошибка записи -4 нет ответа.
         */
-        __declspec(dllexport) int ReadSDO(int receiverId, int index, int subIndex, unsigned char* outBuffer, int timeout_ms = 1000) {
+        int ReadSDO(int receiverId, int index, int subIndex, unsigned char* outBuffer, int timeout_ms = 1000) {
             if (!isConnected) return -1; //мы всё еще подключены
 
             unsigned char sdoPacket[16] = {0}; //пакет для отправки запроса
@@ -162,16 +190,59 @@ extern "C" {
                 if (GetTickCount() - start >= static_cast<DWORD>(timeout_ms)) return -4; // не нашли пакет в течении таймаута
             }
         }
+        
+        /**
+         * @brief Метод создания, отправки PDO пакетов.
+         * @param receiverId ID узла назначения.
+         * @param numberPDO Номер PDO. 
+         * @param data Массив данных для записи в PDO.
+         * @param dataSize Количество действительных байт.
+        */
+        int WritePDO(int receiverId, int numberPDO, const unsigned char* data, int dataSize) {
+            if (!isConnected) return -1;
+            
+            unsigned char pdoPacket[16] = {0}; // пакет для отправки запроса
+            int cobid = numberPDO + receiverId;
+            pdoPacket[0] = static_cast<uint8_t>(cobid & 0xFF); // id получателя
+            pdoPacket[1] = static_cast<uint8_t>((cobid) >> 8);
+            pdoPacket[4] = dataSize; // количество значимых байт
+            std::memcpy(&pdoPacket[8], data, dataSize); // записываем данные в пакет PDO
+            int sendResult = sendto(udpSocket, (char*)pdoPacket, sizeof(pdoPacket), 0, (sockaddr*)&serverAddr, sizeof(serverAddr));
+            if (sendResult == SOCKET_ERROR) return -2; // не смогли отправить
+            return 1;
+
+        }
+
+        /**
+            * @brief Метод для старта выдачи heartbeat.
+            * @param period_ms Период выдачи heartbeat в миллисекундах.
+        */
+        int Start_heartbeat(int period_ms) {
+            period_heartbeat_ms = period_ms;
+            send_heartbeat = true;
+            return 1;
+        };
+
+        /**
+            * @brief Метод для остановки выдачи heartbeat.
+        */
+        int Stop_heartbeat() {
+            send_heartbeat = false;
+            return 1;
+        };
 
         /**
             * @brief Метод завершения сеанса связи, остановка потока чтения и закрытия сокета.
             * @return 1 - успешно -1 - не подключены.
         */
-        __declspec(dllexport) int Disconnect() {
+        int Disconnect() {
             if (isConnected) {
                 isConnected = false;
                 if (readThread.joinable()) { // проверяем что можем завершить поток
                     readThread.join(); // Дожидаемся завершения потока
+                }
+                if (heartbeatThread.joinable()) { // проверяем что можем завершить поток
+                    heartbeatThread.join(); // Дожидаемся завершения потока
                 }
                 closesocket(udpSocket); // закрываем сокет
                 WSACleanup(); // завершаем операции сокетов
@@ -205,6 +276,11 @@ extern "C" {
         std::thread readThread;
 
         /**
+            * Поток для отправки heartbeat
+        */
+        std::thread heartbeatThread;
+
+        /**
             * Общий буфер чтения. Буфер, в который записываются получаемые данные. 
             * Используется для дальнейшего распределения пакетов SDO чтения и записи.
         */
@@ -213,7 +289,15 @@ extern "C" {
         /**
             * Буфер для хранения принятых PDO пакетов.
         */
-        unsigned char* pdobuffer;
+        //unsigned char* pdobuffer;
+
+        unsigned char pdobuffer[16];
+
+        /**
+            * Буфер для передачи ошибок с шины.
+        */
+        //unsigned char* errorbuffer;
+        unsigned char errorbuffer[16];
 
         /**
         * Буфер для записи SDO пакетов ответа на запись. 
@@ -241,6 +325,22 @@ extern "C" {
         */
         const int RECEIVE_COBID = 0x580;
 
+        /**
+         * Период выдачи heartbeat
+        */
+        int period_heartbeat_ms = 1000;
+
+        bool send_heartbeat = false;
+
+        /**
+         * Callback для получения pdo пакета.
+        */
+        CallbackFunc callback_pdo;
+
+        /**
+         * Callback для получения ошибки с шины.
+        */
+        CallbackFunc callback_error;
 
         /**
             * @brief Метод прослушивания сокета и распределения пакетов SDO/PDO.
@@ -248,14 +348,24 @@ extern "C" {
         void PacketListener() {
             uint16_t can_id;
             fd_set readSet;
-            FD_ZERO(&readSet); // настраеваем фд для работы select
-            FD_SET(udpSocket, &readSet);
+            
 
             timeval timeout;
             timeout.tv_sec = 0;
-            timeout.tv_usec = 500000;  // 500 ms
+            timeout.tv_usec = 50000;  // 50 ms
+
+            unsigned char heartbeat[16] = {0}; // пакет для отправки запроса
+            heartbeat[0] = 0x78; // id получателя
+            heartbeat[1] = 0x7; // heartbeat cobid
+            heartbeat[4] = 1; // длинна пакета
+            heartbeat[8] = 0x05; // hearbeat
+
+            DWORD start = GetTickCount();
+
             while (isConnected) {
                 // проверяем доступность данных
+                FD_ZERO(&readSet); // настраеваем фд для работы select
+                FD_SET(udpSocket, &readSet);
                 int result = select(0, &readSet, nullptr, nullptr, &timeout);
 
                 //данные доступны
@@ -267,15 +377,25 @@ extern "C" {
                     }
                     if (recvResult >= 16){ // получили данные
                         can_id = (static_cast<uint16_t>(readBuffer[1]) << 8) | readBuffer[0]; //считаем cobid из двух байт принятого пакета
-                        if ((can_id >= 0x180 && can_id <= 0x57F) && (can_id & 0x80) ) {// Проверяем что это PDO
+                        //if ((can_id >= 0x180 && can_id <= 0x57F) && (can_id & 0x80) ) {// Проверяем что это PDO
+                        if ((can_id >= 0x180 && can_id <= 0x57F)) {// Проверяем что это PDO
                             GetPDO(); // Записываем во внешний массив pdobuffer
                         } else if (readBuffer[8] == 0x60) {
-                            GetSDO(true); // Записываем ответ в очередь ответов для SDO записи
+                            GetSDO(IS_ANSWER); // Записываем ответ в очередь ответов для SDO записи
                         } else if (readBuffer[4] == 8 && readBuffer[8] <= 0x53 &&  readBuffer[8] >= 0x43) {
-                            GetSDO(false); // Записываем ответ в очередь ответов для SDO чтения
+                            GetSDO(IS_REQUEST); // Записываем ответ в очередь ответов для SDO чтения
+                        } else if (can_id >= 0x80 && can_id < 0xFF) {
+                            GetError(); // Записываем ошибку во внешний массив errorbuffer
                         }
                     }
                     
+                }
+
+                if (send_heartbeat){
+                    if (GetTickCount() - start >= static_cast<DWORD>(period_heartbeat_ms)) {
+                        sendto(udpSocket, (char*)heartbeat, sizeof(heartbeat), 0, (sockaddr*)&serverAddr, sizeof(serverAddr));
+                        start = GetTickCount();
+                    }
                 }
             }
         }
@@ -289,7 +409,12 @@ extern "C" {
             pdobuffer[0] = readBuffer[0]; // первая часть cobid
             pdobuffer[1] = readBuffer[1]; // вторая часть cobid
             pdobuffer[2] = readBuffer[4]; // длина значимых байт
-            std::copy(readBuffer + 8,readBuffer + 16, pdobuffer+3); // записываем дату PDO
+            std::copy(readBuffer + 8,readBuffer + 16, pdobuffer+3); // записываем содержимое PDO
+
+            if (callback_pdo) {
+                callback_pdo(pdobuffer);
+            }
+            
             return 1;
         }
 
@@ -310,6 +435,20 @@ extern "C" {
             return 1;
         }
 
+        /**
+         * @brief Метод получения кода ошибки
+         * @return 1 - успешно.
+        */
+        int GetError() {
+
+            errorbuffer[0] = readBuffer[0]; // первая часть cobid
+            errorbuffer[1] = readBuffer[1]; // вторая часть cobid
+            std::copy(readBuffer + 8,readBuffer + 16, errorbuffer+2); // записываем содержимое пакета ошибки
+            if (callback_error) {
+                callback_error(errorbuffer);
+            }
+            return 1;
+        }
         /**
             * @brief Метод создания заголовка SDO пакета.
             * @param package Массив в котором формируется пакет.
@@ -381,12 +520,32 @@ extern "C" {
         return instance->ReadSDO(receiverId, index, subIndex, outBuffer, timeout_ms);
     }
 
+    __declspec(dllexport) int WritePDO(Worker* instance, int receiverId, int numberPDO, const unsigned char* data, int dataSize) {
+        return instance->WritePDO(receiverId, numberPDO, data, dataSize);
+    }
+
+    __declspec(dllexport) int Start_heartbeat(Worker* instance, int period_ms) {
+        return instance->Start_heartbeat(period_ms);
+    }
+
+    __declspec(dllexport) int Stop_heartbeat(Worker* instance) {
+        return instance->Stop_heartbeat();
+    }
+
+    __declspec(dllexport) int RegisterCallback_pdo(Worker* instance, CallbackFunc callback) {
+        return instance->RegisterCallback_pdo(callback);
+    }
+
+    __declspec(dllexport) int RegisterCallback_error(Worker* instance, CallbackFunc callback) {
+        return instance->RegisterCallback_error(callback);
+    }
+
     __declspec(dllexport) int Disconnect(Worker* instance) {
         return instance->Disconnect();
     }
 
-    __declspec(dllexport) Worker* CreateWorker(unsigned char* pdoBuffer) {
-        return new Worker(pdoBuffer);
+    __declspec(dllexport) Worker* CreateWorker() {
+        return new Worker();
     }
 
     __declspec(dllexport) void DestroyWorker(Worker* worker) {
